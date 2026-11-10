@@ -1,0 +1,10 @@
+* text=auto
+# 这些文件会被挂载进 Linux 容器或在类 Unix 环境执行，必须保持 LF 行尾
+*.sh   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+# 批处理文件必须是 CRLF，按原样存储，不做行尾转换
+*.bat  -text
+*.jpg  binary
+*.png  binary
+*.pdf  binary

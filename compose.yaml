@@ -1,0 +1,86 @@
+# 掌柜智库的本地依赖：Milvus（向量与全文检索）、MongoDB（文档台账与对话历史）、
+# 两个 Text Embeddings Inference 实例（向量模型、重排序模型）。
+# 所有端口只绑定 127.0.0.1，并避开各服务的默认端口。
+name: merchant-knowledge-base
+
+services:
+  milvus:
+    # 单容器模式：内嵌 etcd + 本地文件存储，不需要额外的 etcd 和对象存储服务
+    image: milvusdb/milvus:v2.5.5
+    restart: unless-stopped
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_USE_EMBED: "true"
+      ETCD_DATA_DIR: /var/lib/milvus/etcd
+      ETCD_CONFIG_PATH: /milvus/configs/embedEtcd.yaml
+      COMMON_STORAGETYPE: local
+    ports: ["127.0.0.1:${MILVUS_PORT:-19630}:19530"]
+    volumes:
+      - milvus_data:/var/lib/milvus
+      - ./deploy/milvus/embedEtcd.yaml:/milvus/configs/embedEtcd.yaml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 10s
+      timeout: 10s
+      start_period: 60s
+      retries: 30
+
+  mongodb:
+    image: mongo:7.0
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-zhiku}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?请先在项目根目录创建 .env}
+    ports: ["127.0.0.1:${MONGO_PORT:-27117}:27017"]
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping').ok\" | grep -q 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+
+  embedding:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
+    restart: unless-stopped
+    environment:
+      # 默认首次启动时从 HuggingFace 下载模型并缓存到数据卷；
+      # 离线部署时把模型放到 deploy/models/ 下，并设置 EMBEDDING_MODEL_ID=/models/bge-large-zh-v1.5
+      MODEL_ID: ${EMBEDDING_MODEL_ID:-BAAI/bge-large-zh-v1.5}
+      # 超过模型最大长度（512 token）的输入自动截断，而不是报错
+      AUTO_TRUNCATE: "true"
+      MAX_BATCH_TOKENS: "8192"
+    ports: ["127.0.0.1:${EMBEDDING_PORT:-18181}:80"]
+    volumes:
+      - model_cache:/data
+      - ./deploy/models:/models:ro
+
+  reranker:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
+    restart: unless-stopped
+    environment:
+      MODEL_ID: ${RERANK_MODEL_ID:-BAAI/bge-reranker-base}
+      AUTO_TRUNCATE: "true"
+      MAX_BATCH_TOKENS: "8192"
+    ports: ["127.0.0.1:${RERANK_PORT:-18182}:80"]
+    volumes:
+      - model_cache:/data
+      - ./deploy/models:/models:ro
+
+  attu:
+    # 可选的 Milvus 管理界面：docker compose --profile tools up -d attu
+    profiles: ["tools"]
+    image: zilliz/attu:v2.5.10
+    restart: unless-stopped
+    environment:
+      MILVUS_URL: milvus:19530
+    ports: ["127.0.0.1:${ATTU_PORT:-17000}:3000"]
+    depends_on:
+      milvus: {condition: service_healthy}
+
+volumes:
+  milvus_data:
+  mongo_data:
+  model_cache:

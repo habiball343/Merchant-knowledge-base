@@ -1,0 +1,27 @@
+# 本机配置与运行数据（含密码、密钥，禁止提交）
+.env
+.local/
+data/
+
+# Python
+__pycache__/
+*.py[oc]
+.venv/
+.pytest_cache/
+*.egg-info/
+logs/
+
+# Node
+node_modules/
+dist/
+*.log
+
+# 离线模型权重
+deploy/models/*
+!deploy/models/.gitkeep
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
